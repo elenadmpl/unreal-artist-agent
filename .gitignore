@@ -1,0 +1,15 @@
+# Reports and captures generated while you work (keep the folder, ignore the contents)
+exports/*
+!exports/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Local Claude Code state
+.claude/settings.local.json
