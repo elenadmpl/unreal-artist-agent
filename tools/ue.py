@@ -5,8 +5,14 @@
     python tools/ue.py list-blueprints             list every Blueprint in the project
     python tools/ue.py read-blueprint BP_Door      export + report one Blueprint (name or /Game path)
     python tools/ue.py read-blueprint --all        export every Blueprint (up to --limit)
+    python tools/ue.py read-material M_Rock        export + report a material's artist knobs
     python tools/ue.py scene-report                snapshot of every actor in the open level
     python tools/ue.py screenshot                  capture the viewport into exports/screenshots
+    python tools/ue.py sweep                       QA pass: top-down + eye-level + player-eye shots
+    python tools/ue.py camera frame --angle top    move the viewport camera (set/frame/get)
+    python tools/ue.py snapshot                    checkpoint the scene (before building)
+    python tools/ue.py diff-scene                  what changed since the checkpoint?
+    python tools/ue.py revert-additions [--yes]    undo everything added since the checkpoint
     python tools/ue.py cesium status               real-world tiles: what's set up? (Cesium plugin)
     python tools/ue.py cesium goto --lat X --lon Y move the world origin to a real place
     python tools/ue.py exec "import unreal; ..."   run one line of Python inside the editor
@@ -28,6 +34,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import uaa_remote  # noqa: E402
 import bp_report  # noqa: E402
+import scene_diff  # noqa: E402
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXPORTS = os.path.join(REPO_ROOT, "exports")
@@ -216,18 +223,15 @@ def cmd_scene_report(args):
     print("Full snapshot: %s" % os.path.relpath(payload["json"], REPO_ROOT))
 
 
-def cmd_screenshot(args):
-    filename = "uaa_shot_%s.png" % time.strftime("%Y%m%d_%H%M%S")
-    try:
-        _info, payload = _run_inside(
-            "screenshot.py",
-            {"width": args.width, "height": args.height, "filename": filename},
-            timeout=60.0)
-    except uaa_remote.UnrealNotFoundError as exc:
-        _not_found(exc)
+def _take_screenshot(args, filename=None):
+    """Trigger a viewport capture, wait for the file, copy into exports/. Returns the path."""
+    filename = filename or ("uaa_shot_%s.png" % time.strftime("%Y%m%d_%H%M%S"))
+    _info, payload = _run_inside(
+        "screenshot.py",
+        {"width": args.width, "height": args.height, "filename": filename},
+        timeout=60.0, discover_timeout=args.timeout)
 
     expected = payload.get("expected_path")
-    print("Waiting for the editor to write %s ..." % os.path.basename(expected))
     deadline = time.time() + 30.0
     last_size = -1
     while time.time() < deadline:
@@ -246,7 +250,150 @@ def cmd_screenshot(args):
     os.makedirs(out_dir, exist_ok=True)
     final = os.path.join(out_dir, os.path.basename(expected))
     shutil.copy2(expected, final)
+    return final
+
+
+def cmd_screenshot(args):
+    final = _take_screenshot(args)
     print("Screenshot: %s" % os.path.relpath(final, REPO_ROOT))
+
+
+def cmd_camera(args):
+    params = {"mode": args.mode}
+    if args.mode == "set":
+        params.update({"location": [args.x, args.y, args.z],
+                       "pitch": args.pitch, "yaw": args.yaw})
+    elif args.mode == "frame":
+        params["angle"] = args.angle
+    try:
+        _info, payload = _run_inside("camera.py", params,
+                                     timeout=60.0, discover_timeout=args.timeout)
+    except uaa_remote.UnrealNotFoundError as exc:
+        _not_found(exc)
+    if payload.get("error"):
+        print("[!] %s" % payload["error"])
+        sys.exit(1)
+    cam = payload.get("camera")
+    if cam:
+        print("Camera at %s  pitch=%s yaw=%s" % (cam.get("location"), cam.get("pitch"), cam.get("yaw")))
+
+
+def cmd_sweep(args):
+    """The 3-angle QA pass: top-down, eye-level, player-eye."""
+    results = []
+    for angle in ("top", "eye", "player"):
+        try:
+            _info, cam_payload = _run_inside("camera.py", {"mode": "frame", "angle": angle},
+                                             timeout=60.0, discover_timeout=args.timeout)
+        except uaa_remote.UnrealNotFoundError as exc:
+            _not_found(exc)
+        if not cam_payload.get("moved"):
+            print("[!] Could not frame the %s angle: %s" % (angle, cam_payload.get("error", "unknown")))
+            continue
+        time.sleep(args.settle)  # let streaming/exposure settle before capturing
+        shot = _take_screenshot(args, filename="sweep_%s_%s.png" % (angle, time.strftime("%H%M%S")))
+        sidecar = os.path.splitext(shot)[0] + ".json"
+        with open(sidecar, "w", encoding="utf-8") as handle:
+            json.dump({"angle": angle, "camera": cam_payload.get("camera"),
+                       "scene_bounds": cam_payload.get("bounds")}, handle, indent=2)
+        results.append((angle, shot))
+        print("  %-7s %s" % (angle, os.path.relpath(shot, REPO_ROOT)))
+    if not results:
+        sys.exit(3)
+    print("Sweep done - %d angle(s). Each .png has a .json sidecar with the camera pose." % len(results))
+
+
+CHECKPOINT_DIR = os.path.join(EXPORTS, "checkpoints")
+
+
+def _checkpoint_path(name):
+    return os.path.join(CHECKPOINT_DIR, "%s.json" % name)
+
+
+def _fresh_scene(args, out_dir, filename):
+    _info, payload = _run_inside("scene_report.py",
+                                 {"out_dir": out_dir, "filename": filename},
+                                 timeout=args.timeout_long, discover_timeout=args.timeout)
+    return payload
+
+
+def cmd_snapshot(args):
+    try:
+        payload = _fresh_scene(args, CHECKPOINT_DIR, "%s.json" % args.name)
+    except uaa_remote.UnrealNotFoundError as exc:
+        _not_found(exc)
+    print("Checkpoint '%s' saved: level %s, %s actor(s)."
+          % (args.name, payload.get("level"), payload.get("actor_count")))
+    print("Compare later with `diff-scene`, or undo additions with `revert-additions`.")
+
+
+def cmd_diff_scene(args):
+    checkpoint = _checkpoint_path(args.name)
+    if not os.path.isfile(checkpoint):
+        print("No checkpoint named '%s'. Take one first:  python tools/ue.py snapshot" % args.name)
+        sys.exit(1)
+    try:
+        payload = _fresh_scene(args, os.path.join(EXPORTS, "scenes"),
+                               "diff_current_%s.json" % time.strftime("%H%M%S"))
+    except uaa_remote.UnrealNotFoundError as exc:
+        _not_found(exc)
+    result = scene_diff.diff(scene_diff.load_snapshot(checkpoint),
+                             scene_diff.load_snapshot(payload["json"]))
+    print(scene_diff.format_diff(result))
+
+
+def cmd_revert_additions(args):
+    checkpoint = _checkpoint_path(args.name)
+    if not os.path.isfile(checkpoint):
+        print("No checkpoint named '%s'. Nothing to revert to." % args.name)
+        sys.exit(1)
+    keys = scene_diff.keep_keys(scene_diff.load_snapshot(checkpoint))
+    params = {"keep_keys": keys, "dry_run": not args.yes}
+    try:
+        _info, payload = _run_inside("delete_actors.py", params,
+                                     timeout=args.timeout_long, discover_timeout=args.timeout)
+    except uaa_remote.UnrealNotFoundError as exc:
+        _not_found(exc)
+
+    if payload.get("dry_run"):
+        targets = payload.get("would_delete") or []
+        if not targets:
+            print("Nothing was added since checkpoint '%s' - the scene is already clean." % args.name)
+            return
+        print("Would delete %d actor(s) added since checkpoint '%s':" % (len(targets), args.name))
+        for target in targets:
+            print("  - %-30s %s" % (target.get("label"), target.get("class")))
+        print("This was a preview. To actually delete them, add:  --yes")
+    else:
+        deleted = payload.get("deleted") or []
+        failed = payload.get("failed") or []
+        print("Deleted %d actor(s)." % len(deleted))
+        for entry in failed:
+            print("  [!] could not delete %s (%s)" % (entry.get("label"), entry.get("class")))
+
+
+def cmd_read_material(args):
+    if not args.target and not getattr(args, "all", False):
+        print("Which material? ue.py read-material M_Rock   (or --all)")
+        sys.exit(1)
+    out_dir = os.path.join(EXPORTS, "materials")
+    params = {"root": args.root, "out_dir": out_dir, "limit": args.limit}
+    if args.target:
+        params["target"] = args.target
+    try:
+        _info, payload = _run_inside("material_reader.py", params,
+                                     timeout=args.timeout_long, discover_timeout=args.timeout)
+    except uaa_remote.UnrealNotFoundError as exc:
+        _not_found(exc)
+    reports = payload.get("reports") or []
+    if not reports:
+        print(payload.get("message") or "No material matched.")
+        sys.exit(1)
+    print("Exported %d material(s) (project has %d):"
+          % (payload.get("count_exported", len(reports)), payload.get("count_found", 0)))
+    for item in reports:
+        md_path = bp_report.write_material_report(item["json"])
+        print("  %s -> %s" % (item.get("path"), os.path.relpath(md_path, REPO_ROOT)))
 
 
 def cmd_cesium(args):
@@ -328,6 +475,46 @@ def main():
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
     p.set_defaults(func=cmd_screenshot)
+
+    p = sub.add_parser("camera", help="move the viewport camera (set / frame / get)")
+    p.add_argument("mode", choices=["set", "frame", "get"])
+    p.add_argument("--x", type=float, default=0.0)
+    p.add_argument("--y", type=float, default=0.0)
+    p.add_argument("--z", type=float, default=300.0)
+    p.add_argument("--pitch", type=float, default=0.0)
+    p.add_argument("--yaw", type=float, default=0.0)
+    p.add_argument("--angle", choices=["top", "eye", "player"], default="eye",
+                   help="for frame mode: which auto-framed view")
+    p.set_defaults(func=cmd_camera)
+
+    p = sub.add_parser("sweep", help="QA pass: screenshot the scene from top / eye / player angles")
+    p.add_argument("--width", type=int, default=1280)
+    p.add_argument("--height", type=int, default=720)
+    p.add_argument("--settle", type=float, default=1.0,
+                   help="seconds to wait after moving the camera before capturing")
+    p.set_defaults(func=cmd_sweep)
+
+    p = sub.add_parser("snapshot", help="save a checkpoint of the current scene (for diff/revert)")
+    p.add_argument("name", nargs="?", default="last")
+    p.set_defaults(func=cmd_snapshot)
+
+    p = sub.add_parser("diff-scene", help="what changed since a checkpoint?")
+    p.add_argument("name", nargs="?", default="last")
+    p.set_defaults(func=cmd_diff_scene)
+
+    p = sub.add_parser("revert-additions",
+                       help="delete actors added since a checkpoint (previews by default; --yes to delete)")
+    p.add_argument("name", nargs="?", default="last")
+    p.add_argument("--yes", action="store_true",
+                   help="actually delete (without this it only shows what would go)")
+    p.set_defaults(func=cmd_revert_additions)
+
+    p = sub.add_parser("read-material", help="export material(s) to JSON + a plain-English report")
+    p.add_argument("target", nargs="?", help="a name fragment (M_Rock) or full /Game path")
+    p.add_argument("--all", action="store_true", help="export everything under --root")
+    p.add_argument("--root", default="/Game")
+    p.add_argument("--limit", type=int, default=25)
+    p.set_defaults(func=cmd_read_material)
 
     p = sub.add_parser("cesium", help="real-world 3D tiles: status / goto / setup (needs the Cesium plugin)")
     p.add_argument("action", choices=["status", "goto", "setup"])

@@ -291,6 +291,45 @@ def _graphs(bp, errors):
     return out
 
 
+def _widgets(bp, errors):
+    """For Widget (UI) Blueprints: the tree of on-screen elements."""
+    tree = _prop(bp, "widget_tree")
+    if tree is None:
+        return None
+    root = _prop(tree, "root_widget")
+    if root is None:
+        errors.append("widgets: widget_tree present but root_widget not readable")
+        return None
+    budget = [200]  # cap so a pathological tree can't run away
+
+    def walk(widget):
+        if widget is None or budget[0] <= 0:
+            return None
+        budget[0] -= 1
+        entry = {"name": _name_of(widget),
+                 "class": _safe(lambda: str(widget.get_class().get_name()))}
+        text = _prop(widget, "text")  # TextBlocks/buttons: show their label
+        if text is not None:
+            entry["text"] = _safe(lambda: str(text))
+        kids = []
+        count = _safe(lambda: widget.get_children_count())
+        if count:
+            for i in range(int(count)):
+                child = walk(_safe(lambda: widget.get_child_at(i)))
+                if child:
+                    kids.append(child)
+        else:
+            content = _safe(lambda: widget.get_content())
+            child = walk(content) if content is not None else None
+            if child:
+                kids.append(child)
+        if kids:
+            entry["children"] = kids
+        return entry
+
+    return walk(root)
+
+
 def read_one(path):
     errors = []
     bp = unreal.EditorAssetLibrary.load_asset(path)
@@ -318,6 +357,9 @@ def read_one(path):
         "graphs": _graphs(bp, errors),
         "errors": errors,
     }
+    widgets = _widgets(bp, errors)
+    if widgets is not None:
+        report["widgets"] = widgets
     return report
 
 

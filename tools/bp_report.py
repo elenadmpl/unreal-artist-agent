@@ -157,6 +157,12 @@ def to_markdown(report):
             lines.append("- `%s`" % sig)
         lines.append("")
 
+    widgets = report.get("widgets")
+    if widgets:
+        lines.append("## On-screen elements (this is a UI widget)")
+        lines.extend(_widget_lines(widgets))
+        lines.append("")
+
     errors = report.get("errors") or []
     if errors:
         lines.append("## What this report could NOT see")
@@ -166,6 +172,94 @@ def to_markdown(report):
         lines.append("")
 
     return "\n".join(lines)
+
+
+def _widget_lines(widget, depth=0):
+    label = widget.get("name") or "(unnamed)"
+    cls = widget.get("class") or "?"
+    text = (' - shows "%s"' % widget["text"]) if widget.get("text") else ""
+    lines = ["%s- **%s** (%s)%s" % ("  " * depth, label, cls, text)]
+    for child in widget.get("children") or []:
+        lines.extend(_widget_lines(child, depth + 1))
+    return lines
+
+
+# ---------------------------------------------------------------------- #
+# materials
+# ---------------------------------------------------------------------- #
+
+BLEND_HINTS = {
+    "OPAQUE": "solid - light can't pass through",
+    "MASKED": "solid with cut-out holes (leaves, fences)",
+    "TRANSLUCENT": "see-through (glass, water, fog cards)",
+    "ADDITIVE": "glows on top of what's behind it (fire, holograms)",
+}
+
+
+def material_to_markdown(report):
+    name = report.get("name") or "Unknown Material"
+    lines = ["# Material report: %s" % name, ""]
+    lines.append("**Where it lives:** `%s`" % (report.get("path") or "?"))
+    lines.append("")
+    if report.get("is_instance"):
+        chain = report.get("parent_chain") or []
+        base = chain[-1] if chain else "?"
+        lines.append("**What it is:** a *Material Instance* - a preset of `%s` with some" % base)
+        lines.append("knobs turned. Instances are the artist-friendly layer: change the values")
+        lines.append("below in the Details panel and nothing can break.")
+        if len(chain) > 1:
+            lines.append("")
+            lines.append("Preset chain: " + " -> ".join("`%s`" % c for c in chain))
+    else:
+        lines.append("**What it is:** a *base Material* - the actual recipe. The parameters below")
+        lines.append("are the knobs its author chose to expose; everything else is wiring inside.")
+        blend = (report.get("blend_mode") or "").split(".")[-1].upper().replace("BLEND_", "")
+        for key, hint in BLEND_HINTS.items():
+            if key in blend:
+                lines.append("")
+                lines.append("Surface type: **%s** (%s)." % (blend.title(), hint))
+                break
+    lines.append("")
+
+    params = report.get("parameters") or {}
+    sections = (
+        ("scalar", "Sliders (numbers)"),
+        ("vector", "Colors"),
+        ("texture", "Textures (images)"),
+        ("switch", "On/off switches"),
+    )
+    any_params = False
+    for bucket, title in sections:
+        entries = params.get(bucket) or []
+        if not entries:
+            continue
+        any_params = True
+        lines.append("## %s" % title)
+        lines.append("| Name | Value |")
+        lines.append("|---|---|")
+        for entry in entries[:60]:
+            lines.append("| %s | %s |" % (entry.get("name"), entry.get("value")))
+        lines.append("")
+    if not any_params:
+        lines.append("*(No exposed parameters — this material has no artist-facing knobs.)*")
+        lines.append("")
+
+    errors = report.get("errors") or []
+    if errors:
+        lines.append("## What this report could NOT see")
+        for err in errors:
+            lines.append("- %s" % err)
+        lines.append("")
+    return "\n".join(lines)
+
+
+def write_material_report(json_path):
+    with open(json_path, "r", encoding="utf-8") as handle:
+        report = json.load(handle)
+    md_path = os.path.splitext(json_path)[0] + ".md"
+    with open(md_path, "w", encoding="utf-8") as handle:
+        handle.write(material_to_markdown(report))
+    return md_path
 
 
 def write_report(json_path):

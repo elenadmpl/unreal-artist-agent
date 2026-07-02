@@ -90,7 +90,8 @@ def main():
         "class_counts": class_counts,
         "actors": described,
     }
-    file_path = os.path.join(out_dir, "scene_%s.json" % time.strftime("%Y%m%d_%H%M%S"))
+    filename = PARAMS.get("filename") or ("scene_%s.json" % time.strftime("%Y%m%d_%H%M%S"))
+    file_path = os.path.join(out_dir, filename)
     with open(file_path, "w", encoding="utf-8") as handle:
         json.dump(snapshot, handle, indent=2)
 

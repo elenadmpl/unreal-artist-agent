@@ -1,0 +1,23 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  offline-tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.9", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile every tool
+        run: python -m py_compile tools/ue.py tools/uaa_remote.py tools/bp_report.py tools/scene_diff.py tools/uasset_peek.py tools/inside_unreal/blueprint_reader.py tools/inside_unreal/material_reader.py tools/inside_unreal/scene_report.py tools/inside_unreal/screenshot.py tools/inside_unreal/camera.py tools/inside_unreal/cesium_tools.py tools/inside_unreal/delete_actors.py tools/blender/make_building.py
+      - name: Run offline test suite
+        run: python tests/test_offline.py

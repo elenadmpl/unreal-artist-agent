@@ -1,5 +1,7 @@
 # 🎨 Unreal Artist Agent
 
+[![tests](https://github.com/elenadmpl/unreal-artist-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/elenadmpl/unreal-artist-agent/actions/workflows/tests.yml)
+
 **An AI copilot for Unreal Engine, made for artists and beginners — no coding needed.**
 
 You open your Unreal project, open this folder in [Claude Code](https://claude.com/claude-code),
@@ -88,8 +90,13 @@ just: open project → open Claude Code → talk.
 | `/read-blueprint BP_Door` | Plain-English explanation: what it is, when it fires, what you can tweak. |
 | `/check-scene` | "Here's what's in your level, and here's what looks wrong." |
 | `/real-world Athens at golden hour` | Streams the real Earth into your level (free Cesium plugin + a Google key). |
+| `/undo` | Shows what the agent added since its last checkpoint, and removes it — only after you confirm. |
 | `/what-is Nanite` | Friendly explanations of any Unreal jargon, with artist analogies. |
 | *"Make the lighting golden hour"* | You don't need the slash commands — just talk. |
+
+Every `/build` automatically saves a **checkpoint** first and ends with a
+**3-angle QA sweep** (top-down, eye-level, player-eye), so the agent checks
+its own work the way an art director would — and you always have an undo.
 
 Bigger adventures — procedural cities that build themselves (PCG), making any
 level playable with a walkable character, and generating your own blockout

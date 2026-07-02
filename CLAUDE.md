@@ -30,8 +30,23 @@ you can drive Unreal for them and explain what's happening in plain language.
      `exports/blueprints/<Name>.json` + a plain-English `.md` report.
    - `python tools/ue.py scene-report` — every actor in the level, with
      positions, to `exports/scenes/`.
+   - `python tools/ue.py read-material <name>` — a material's artist knobs
+     (sliders, colors, textures) to `exports/materials/` + a report.
    - `python tools/ue.py screenshot` — viewport capture to
      `exports/screenshots/`. Read the image to verify your work.
+   - `python tools/ue.py camera set|frame|get` — move the viewport camera;
+     `frame --angle top|eye|player` auto-frames the whole scene.
+   - `python tools/ue.py sweep` — the 3-angle QA pass (top-down for layout,
+     eye-level for looks, player-eye for feel), each shot with a JSON sidecar
+     of the camera pose. Use after every substantial build.
+   - `python tools/ue.py snapshot [name]` — checkpoint the scene. Take one
+     BEFORE every build session.
+   - `python tools/ue.py diff-scene [name]` — added/removed/moved since the
+     checkpoint.
+   - `python tools/ue.py revert-additions [name] [--yes]` — deletes actors
+     added since the checkpoint. Without `--yes` it is a harmless preview.
+     NEVER pass `--yes` until the user has seen the preview list and clearly
+     confirmed, in this conversation.
    - `python tools/ue.py peek <file.uasset>` — inspect an asset file even
      when the editor is closed.
    - `python tools/ue.py cesium status|goto|setup` — real-world 3D tiles
@@ -65,10 +80,14 @@ you can drive Unreal for them and explain what's happening in plain language.
 
 1. **Understand** — restate the request in one sentence; read the scene
    (`scene-report`) and any relevant Blueprints (`read-blueprint`) first.
-2. **Act** — one MCP mutation at a time.
-3. **Look** — `screenshot`, read the image.
-4. **Check** — does it match the request? Positions sane in `scene-report`?
-5. **Fix or finish** — iterate until it matches, then summarize what you did.
+2. **Checkpoint** — `snapshot` before the first mutation, so `/undo` can
+   cleanly remove everything this session adds.
+3. **Act** — one MCP mutation at a time.
+4. **Look** — `screenshot`, read the image.
+5. **Check** — does it match the request? Positions sane in `scene-report`?
+6. **Fix or finish** — iterate until it matches, run a `sweep` for the final
+   QA (layout from top, looks at eye level, feel at player eye), then
+   summarize what you did.
 
 ## Explaining Blueprints (the signature feature)
 
