@@ -34,11 +34,22 @@ you can drive Unreal for them and explain what's happening in plain language.
      `exports/screenshots/`. Read the image to verify your work.
    - `python tools/ue.py peek <file.uasset>` — inspect an asset file even
      when the editor is closed.
+   - `python tools/ue.py cesium status|goto|setup` — real-world 3D tiles
+     (Cesium plugin). ALWAYS use `goto` to move the world origin — never set
+     georeference lat/lon properties through MCP; property writes skip
+     Cesium's setters and the planet lands in the wrong place. `status` and
+     `goto` are safe; `setup` adds actors (never deletes).
 
 ## Hard rules
 
 - **One editor, one game thread.** Never run two scene-changing operations at
   the same time. Build sequentially; only read-only calls may overlap.
+  PCG especially: never overlap `ExecuteGraphInstance`/regeneration calls —
+  concurrent PCG execution freezes the editor. One graph, one volume, one
+  execution at a time, fully returned before the next.
+- **Never repeat the user's API keys back in chat or write them into
+  committed files.** A Google Maps key pasted for Cesium goes into the tool
+  command and nowhere else; remind the user it ends up stored in their level.
 - **See it before you say it's done.** After every meaningful visual change:
   screenshot -> read the image -> compare against what was asked -> fix or
   confirm. Use scene-report to check positions and overlaps numerically.
@@ -73,6 +84,24 @@ When asked what a Blueprint does ("what does BP_Door do?", "explain this"):
    - which settings the artist can safely tweak (the variables),
    - anything the report couldn't see (be honest about gaps).
 4. Offer a next step: "want me to change one of these settings?"
+
+## Big-feature playbooks
+
+- **Real-world cities** (`/real-world`): cesium status → (plugin/key setup
+  with the user if needed) → `cesium goto` → wait a beat for streaming →
+  screenshot → then art-direct lighting. Black screen usually means no sun.
+- **Procedural cities (PCG)**: build in visible stages (shape → districts →
+  blocks → buildings → roads), executing and screenshotting after each so the
+  user sees the city grow. Palette upgrade: Epic's free City Sample Buildings
+  pack — the Fab "Add to Project" download is a manual user step; everything
+  after is yours.
+- **Make it playable**: needs the Third Person content pack, which only the
+  user can add (Tools → Add Feature or Content Pack… → Blueprint → Third
+  Person). After that: place a PlayerStart, set the level's GameMode override
+  to BP_ThirdPersonGameMode, Play. Details: docs/07-BIG-WORLDS.md.
+- **Blender blockout buildings**: `blender --background --python
+  tools/blender/make_building.py -- --floors N --out file.fbx`, then import
+  the FBX. Only if the user has Blender installed.
 
 ## Repo map
 

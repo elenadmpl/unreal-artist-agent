@@ -24,6 +24,18 @@ Copy, paste, adjust. Mood words do more than measurements.
 - *Pull the camera to knee height and re-shoot; I want it to feel small.*
 - *Everything is too evenly spaced. Clump things, leave gaps.*
 
+## Big worlds
+
+- */real-world Athens, from above the Acropolis at golden hour.*
+- *Fly me to Tokyo, 400 meters over Shibuya, and give it rainy-night mood
+  lighting once the tiles load.*
+- *Enable PCG and build me a procedural city in stages — show me the shape
+  and districts first, buildings only after I approve the layout.*
+- *Scatter the city's buildings so downtown is tall and dense and the edges
+  are low and sparse.*
+- *I added the Third Person pack — make this level playable, spawn me facing
+  the fountain.*
+
 ## Understanding a project
 
 - */read-blueprint* — then pick from the list.

@@ -7,6 +7,8 @@
     python tools/ue.py read-blueprint --all        export every Blueprint (up to --limit)
     python tools/ue.py scene-report                snapshot of every actor in the open level
     python tools/ue.py screenshot                  capture the viewport into exports/screenshots
+    python tools/ue.py cesium status               real-world tiles: what's set up? (Cesium plugin)
+    python tools/ue.py cesium goto --lat X --lon Y move the world origin to a real place
     python tools/ue.py exec "import unreal; ..."   run one line of Python inside the editor
     python tools/ue.py run my_script.py            run a Python file inside the editor
     python tools/ue.py peek Some.uasset            look inside a .uasset WITHOUT opening Unreal
@@ -42,10 +44,10 @@ def _script(name):
         return handle.read()
 
 
-def _run_inside(script_name, params, timeout=300.0):
+def _run_inside(script_name, params, timeout=300.0, discover_timeout=5.0):
     """Run one of our inside_unreal scripts in the live editor."""
     with uaa_remote.UnrealConnection() as ue:
-        info = ue.discover()
+        info = ue.discover(timeout=discover_timeout)
         result = ue.run(uaa_remote.inject_params(_script(script_name), params), timeout=timeout)
     payload = uaa_remote.extract_result(result)
     errors = uaa_remote.output_errors(result)
@@ -156,7 +158,7 @@ def cmd_list_blueprints(args):
     try:
         _info, payload = _run_inside("blueprint_reader.py",
                                      {"list_only": True, "root": args.root},
-                                     timeout=args.timeout_long)
+                                     timeout=args.timeout_long, discover_timeout=args.timeout)
     except uaa_remote.UnrealNotFoundError as exc:
         _not_found(exc)
     blueprints = payload.get("blueprints") or []
@@ -181,7 +183,7 @@ def cmd_read_blueprint(args):
     if args.target:
         params["target"] = args.target
     try:
-        _info, payload = _run_inside("blueprint_reader.py", params, timeout=args.timeout_long)
+        _info, payload = _run_inside("blueprint_reader.py", params, timeout=args.timeout_long, discover_timeout=args.timeout)
     except uaa_remote.UnrealNotFoundError as exc:
         _not_found(exc)
 
@@ -205,7 +207,7 @@ def cmd_scene_report(args):
     out_dir = os.path.join(EXPORTS, "scenes")
     try:
         _info, payload = _run_inside("scene_report.py", {"out_dir": out_dir},
-                                     timeout=args.timeout_long)
+                                     timeout=args.timeout_long, discover_timeout=args.timeout)
     except uaa_remote.UnrealNotFoundError as exc:
         _not_found(exc)
     print("Level: %s   Actors: %s" % (payload.get("level"), payload.get("actor_count")))
@@ -245,6 +247,39 @@ def cmd_screenshot(args):
     final = os.path.join(out_dir, os.path.basename(expected))
     shutil.copy2(expected, final)
     print("Screenshot: %s" % os.path.relpath(final, REPO_ROOT))
+
+
+def cmd_cesium(args):
+    params = {"action": args.action}
+    if args.action in ("goto", "setup"):
+        if args.action == "goto" and (args.lat is None or args.lon is None):
+            print("Where to? ue.py cesium goto --lat 37.9838 --lon 23.7275   (that's Athens)")
+            sys.exit(1)
+        params.update({"lat": args.lat, "lon": args.lon, "height": args.height})
+    if args.action == "setup":
+        params.update({"key": args.key, "url": args.url, "add_sky": not args.no_sky})
+    try:
+        _info, payload = _run_inside("cesium_tools.py", params, timeout=args.timeout_long, discover_timeout=args.timeout)
+    except uaa_remote.UnrealNotFoundError as exc:
+        _not_found(exc)
+
+    if not payload.get("plugin_loaded"):
+        print("[X] Cesium for Unreal plugin is not enabled in this project.")
+    else:
+        print("[OK] Cesium plugin loaded")
+    for geo in payload.get("georeferences") or []:
+        print("  Georeference %-20s lat=%s lon=%s height=%sm"
+              % (geo.get("name"), geo.get("latitude"), geo.get("longitude"), geo.get("height")))
+    for tileset in payload.get("tilesets") or []:
+        print("  Tileset      %-20s %s" % (tileset.get("name"), tileset.get("url") or tileset.get("source")))
+    if payload.get("moved_georeferences") is not None:
+        print("Moved %d georeference(s), refreshed %d tileset(s)."
+              % (payload["moved_georeferences"], payload.get("refreshed_tilesets", 0)))
+        print("Give the tiles a few seconds to stream in, then take a screenshot.")
+    if not payload.get("has_sun"):
+        print("  (No sun/directional light in the level - the world may look black.)")
+    for note in payload.get("notes") or []:
+        print("[note] %s" % note)
 
 
 def cmd_peek(args):
@@ -293,6 +328,16 @@ def main():
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
     p.set_defaults(func=cmd_screenshot)
+
+    p = sub.add_parser("cesium", help="real-world 3D tiles: status / goto / setup (needs the Cesium plugin)")
+    p.add_argument("action", choices=["status", "goto", "setup"])
+    p.add_argument("--lat", type=float, help="latitude in degrees, e.g. 37.9838")
+    p.add_argument("--lon", type=float, help="longitude in degrees, e.g. 23.7275")
+    p.add_argument("--height", type=float, default=200.0, help="camera-origin height in meters (default 200)")
+    p.add_argument("--key", help="Google Maps Platform API key (setup only)")
+    p.add_argument("--url", help="full tileset URL, if not using --key (setup only)")
+    p.add_argument("--no-sky", action="store_true", help="setup: don't add sun/sky actors")
+    p.set_defaults(func=cmd_cesium)
 
     p = sub.add_parser("peek", help="inspect a .uasset file without opening Unreal")
     p.add_argument("file")

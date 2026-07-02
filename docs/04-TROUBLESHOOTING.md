@@ -80,6 +80,23 @@ bRemoteExecution=False
 You lose Blueprint reading/screenshots but keep MCP building. (Re-test on
 newer engine versions — it's fixed in some.)
 
+## Cesium: "plugin not detected"
+
+`ue.py cesium` says the plugin is missing → it's not enabled in *this*
+project. Fab → "Cesium for Unreal" (free) → Install to Engine → Edit →
+Plugins → enable → restart. No Fab build for a brand-new UE version is a
+real thing — see [06-REAL-WORLD-CITIES.md](06-REAL-WORLD-CITIES.md).
+
+## Cesium: the world is black / gray / empty
+
+- **Black** = no light. `cesium setup` adds a sun; or add a Directional
+  Light + Sky Atmosphere yourself.
+- **Gray or patchy** = tiles still streaming. Give it 10–30 seconds (needs
+  internet), then screenshot again.
+- **Still nothing** = the tileset URL/key. `cesium status` shows the tileset
+  (key masked). Typical causes: the Map Tiles API isn't enabled on your
+  Google Cloud project, the key is restricted, or the free quota ran out.
+
 ## It was working yesterday and not today
 
 90% of the time: the editor was restarted and the MCP server didn't auto-start.

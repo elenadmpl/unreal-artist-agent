@@ -87,8 +87,13 @@ just: open project → open Claude Code → talk.
 | `/build a foggy forest path with god rays` | It builds, screenshots itself, checks its own work, and iterates. |
 | `/read-blueprint BP_Door` | Plain-English explanation: what it is, when it fires, what you can tweak. |
 | `/check-scene` | "Here's what's in your level, and here's what looks wrong." |
+| `/real-world Athens at golden hour` | Streams the real Earth into your level (free Cesium plugin + a Google key). |
 | `/what-is Nanite` | Friendly explanations of any Unreal jargon, with artist analogies. |
 | *"Make the lighting golden hour"* | You don't need the slash commands — just talk. |
+
+Bigger adventures — procedural cities that build themselves (PCG), making any
+level playable with a walkable character, and generating your own blockout
+buildings in Blender — live in [docs/07-BIG-WORLDS.md](docs/07-BIG-WORLDS.md).
 
 More copy-paste ideas: [docs/03-PROMPTS-FOR-ARTISTS.md](docs/03-PROMPTS-FOR-ARTISTS.md)
 
@@ -120,6 +125,8 @@ See a real example: [examples/example-blueprint-report.md](examples/example-blue
 4. [Prompts for artists](docs/03-PROMPTS-FOR-ARTISTS.md)
 5. [Troubleshooting (start here when stuck)](docs/04-TROUBLESHOOTING.md)
 6. [How it all works, for the curious](docs/05-HOW-IT-WORKS.md)
+7. [Real-world cities with Cesium](docs/06-REAL-WORLD-CITIES.md)
+8. [Big worlds: procedural cities & playable characters](docs/07-BIG-WORLDS.md)
 
 ## Credits & license
 
